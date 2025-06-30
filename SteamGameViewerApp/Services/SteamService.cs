@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -55,27 +55,33 @@ namespace SteamGameViewerApp.Services
         public async Task<double> GetGamePriceMYRAsync(int appId)
         {
             string url = $"https://store.steampowered.com/api/appdetails?appids={appId}&cc=my&l=en";
-            try
+
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                var response = await _httpClient.GetAsync(url);
-                if (!response.IsSuccessStatusCode)
-                    return 0;
-
-                var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
-                if (!json.RootElement.TryGetProperty(appId.ToString(), out JsonElement gameData))
-                    return 0;
-
-                if (gameData.GetProperty("success").GetBoolean())
+                try
                 {
-                    var data = gameData.GetProperty("data");
-                    if (data.TryGetProperty("price_overview", out JsonElement priceOverview))
+                    var response = await _httpClient.GetAsync(url);
+                    if (!response.IsSuccessStatusCode) continue;
+
+                    var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                    if (!json.RootElement.TryGetProperty(appId.ToString(), out JsonElement gameData))
+                        continue;
+
+                    if (gameData.GetProperty("success").GetBoolean())
                     {
-                        int finalPriceCents = priceOverview.GetProperty("final").GetInt32();
-                        return finalPriceCents / 100.0;
+                        var data = gameData.GetProperty("data");
+                        if (data.TryGetProperty("price_overview", out JsonElement priceOverview))
+                        {
+                            int finalPriceCents = priceOverview.GetProperty("final").GetInt32();
+                            return finalPriceCents / 100.0;
+                        }
                     }
                 }
+                catch
+                {
+                    // ignore and retry
+                }
             }
-            catch { }
 
             return 0;
         }
