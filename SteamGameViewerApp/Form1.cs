@@ -32,15 +32,28 @@ namespace SteamGameViewerApp
 
         private async void BtnFetch_Click(object sender, EventArgs e)
         {
-            await LoadProfileDataAsync(txtVanityUrl.Text.Trim());
+            profileInfo.Enabled = false;
+            profileInfo.Text = "Loading...";
+
+            try
+            {
+                await LoadProfileDataAsync(txtVanityUrl.Text.Trim());
+            }
+            finally
+            {
+                profileInfo.Text = "Profile Info";
+                profileInfo.Enabled = true;
+            }
         }
 
         private async Task LoadProfileDataAsync(string vanityOrSteamId)
         {
+
             lstPlayedGames.Items.Clear();
             lstPileOfShame.Items.Clear();
             lstFriends.Items.Clear();
             totalCost.Text = "Total Cost: RM 0.00";
+            totalGames.Text = "Total Games: 0";
             ClearProfileInfo();
 
             if (string.IsNullOrEmpty(vanityOrSteamId))
@@ -59,7 +72,11 @@ namespace SteamGameViewerApp
                     return;
                 }
             }
-
+            if (steamId == currentSteamId64 && lstPlayedGames.Items.Count > 0)
+            {
+                System.Diagnostics.Debug.WriteLine("⛔ Already loaded this profile. Skipping reload.");
+                return;
+            }
             currentSteamId64 = steamId;
 
             var profile = await _steamService.GetPlayerSummaryAsync(steamId);
@@ -77,13 +94,22 @@ namespace SteamGameViewerApp
                 return;
             }
 
+            var seenAppIds = new HashSet<int>();
             double totalMYR = 0;
 
             foreach (var gameJson in games)
             {
-                int playtime = gameJson.GetProperty("playtime_forever").GetInt32();
-                string name = gameJson.GetProperty("name").GetString();
                 int appid = gameJson.GetProperty("appid").GetInt32();
+                string name = gameJson.GetProperty("name").GetString();
+                int playtime = gameJson.GetProperty("playtime_forever").GetInt32();
+
+                System.Diagnostics.Debug.WriteLine($"[SteamAPI] Game Fetched: {appid} - {name}");
+
+                if (!seenAppIds.Add(appid))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Skip] Duplicate AppID detected: {appid} - {name}");
+                    continue;
+                }
 
                 double price = await _steamService.GetGamePriceMYRAsync(appid);
                 totalMYR += price;
@@ -95,11 +121,21 @@ namespace SteamGameViewerApp
                     Hours = playtime / 60.0
                 };
 
+                System.Diagnostics.Debug.WriteLine($"[Add] To ListBox: {gameItem}");
+
                 if (playtime == 0)
-                    lstPileOfShame.Items.Add(gameItem);
+                {
+                    if (!lstPileOfShame.Items.Contains(gameItem))
+                        lstPileOfShame.Items.Add(gameItem);
+                }
                 else
-                    lstPlayedGames.Items.Add(gameItem);
+                {
+                    if (!lstPlayedGames.Items.Contains(gameItem))
+                        lstPlayedGames.Items.Add(gameItem);
+                }
             }
+
+
 
             totalCost.Text = $"Total Cost: RM {totalMYR:F2}";
             totalGames.Text = $"Total Games: {games.Length}";
@@ -134,6 +170,8 @@ namespace SteamGameViewerApp
             profilePicture.Image = null;
             profileLink.Text = "profiles";
             profileLink.Tag = null;
+            totalCost.Text = "Total Cost: 0";
+            totalGames.Text = "Total Games: 0";
         }
 
         private void DisplayProfileInfo(JsonElement profile)
